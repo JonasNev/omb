@@ -1,0 +1,118 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: data-onboarding
+  title: Data Onboarding
+  description: Data Onboarding template to suggest you the pipeline for GCP
+  tags:
+    - data-express
+spec:
+  owner: thirty
+  type: service
+
+  parameters:
+
+    - title: Choose Data Onboarding Type
+      properties:
+        template_fields:
+          title: Data Onboarding
+          type: object
+          ui:field: DataOnboardingField
+#          ui:backstage:
+#            review:
+#              show: false
+
+    - title: Google Cloud Platform Information
+      properties:
+        gcp_info:
+          title: Google Cloud Platform details
+          type: object
+          required: 
+            - 'project_name'
+            - 'name'
+            - 'project_id_dev'
+          properties:
+            name:
+              title: Pipeline name
+              type: string
+              description: Pipeline name that will be visible in job list
+            project_name:
+              title: Project Name
+              description: Your GCP project name without dev/acc/prd suffix (e.g. ippatterns-99l33)
+              type: string
+            project_id_dev:
+              title: Project ID (Development)
+              description: Your GCP project ID for dev (e.g. 656184320111)
+              type: string
+            # project_id_acc:
+            #   title: Project ID(Acceptance)
+            #   description: Your GCP project ID for acc (e.g. 656184320111)
+            #   type: string
+            # project_id_prd:
+            #   title: Project ID(Production)
+            #   description: Your GCP project ID for prd (e.g. 656184320111)
+            #   type: string
+    - title: Choose a location
+      required:
+        - repoUrl
+      properties:
+        repoUrl:
+          title: Repository Location
+          type: string
+          ui:field: RepoUrlPicker
+          ui:options:
+           # requestUserCredentials:
+           #   secretsKey: USER_OAUTH_TOKEN
+            allowedHosts:
+              - gitlab.clouda.sebgroup.com
+
+  # This template is meant to be used on top of an existing template.
+  # By adding the following and fetching from an absolute URL you can
+  # add in the docs template
+  steps:
+    - id: save-to-api
+      name: Save information to API
+      action: cng:job_registry:save
+      input:
+        config_fields: ${{ parameters.user_config }}
+        suggested_template_selection: ${{ parameters.pipeline_template_input.suggested_template_selection }}
+        pipeline_config_input: ${{ parameters.pipeline_template_input.pipeline_values }}
+        gcp_info: ${{ parameters.gcp_info }}
+        repoUrl: ${{ parameters.repoUrl }}
+        user: ${{ parameters.user }}
+        owner: ${{ (parameters.repoUrl | parseRepoUrl)["owner"] }}
+        jobEnv: ${{ parameters.pipeline_template_input.pipeline_values['Environment'] }}
+    - id: fetch-base
+      name: Fetch Base
+      action: fetch:template
+      input:
+        url: https://gitlab.clouda.sebgroup.com/thirty/data-express/templates/${{parameters.pipeline_template_input["api_technical_name"] }}
+        #url: https://gitlab.clouda.sebgroup.com/thirty/data-express/templates/gcs-to-bq-filestream-ingestion
+        values:
+          config_fields: ${{ parameters.user_config | dump }}
+          suggested_template_selection: ${{ parameters.pipeline_template_input.suggested_template_selection }}
+          pipeline_config_input: ${{ parameters.pipeline_template_input.pipeline_values | dump }}
+          jobEnv: ${{ parameters.pipeline_template_input.pipeline_values['Environment'] }}
+          gcp_info: ${{ parameters.gcp_info }}
+          name: ${{ parameters.gcp_info["name"] }}
+          repo_name: ${{ (parameters.repoUrl | parseRepoUrl)["repo"] }}
+          repo_owner: ${{ (parameters.repoUrl | parseRepoUrl)["owner"] }}
+
+    - id: publish
+      name: Publish
+      action: publish:gitlab
+      input:
+        gitAuthorName: ${{ user.entity.metadata.name }}
+        gitAuthorEmail: ${{ user.entity.spec.profile.email }}
+        allowedHosts: ["gitlab.clouda.sebgroup.com"]
+        description: Click And Go Pipeline for ${{ parameters.pipeline_template_input.suggested_template_selection }}
+        repoUrl: ${{ parameters.repoUrl }}
+        token: ${{ secrets.USER_OAUTH_TOKEN }}
+        defaultBranch: main
+
+    - id: register
+      name: Register
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
+        catalogInfoPath: '/catalog-info.yaml'
